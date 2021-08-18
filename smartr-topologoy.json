@@ -1,0 +1,220 @@
+{
+    "systemData": {
+        "createdAt": "2021-08-18T15:14:07.298Z",
+        "lastModifiedAt": "2021-08-18T16:58:40.561Z"
+    },
+    "name": "SMARTRVideoSinkByHttp",
+    "properties": {
+        "description": "Event-based video recording to Video Sink based on events from http extension",
+        "parameters": [
+            {
+                "name": "hubSinkOutputName",
+                "type": "string",
+                "description": "hub sink output name",
+                "default": "inferenceOutput"
+            },
+            {
+                "name": "inferencingPassword",
+                "type": "string",
+                "description": "inferencing endpoint password.",
+                "default": "dummyPassword"
+            },
+            {
+                "name": "inferencingUrl",
+                "type": "string",
+                "description": "inferencing Url",
+                "default": "http://yolov3/score"
+            },
+            {
+                "name": "inferencingUserName",
+                "type": "string",
+                "description": "inferencing endpoint user name.",
+                "default": "dummyUserName"
+            },
+            {
+                "name": "rtspPassword",
+                "type": "string",
+                "description": "rtsp source password.",
+                "default": "dummyPassword"
+            },
+            {
+                "name": "rtspUrl",
+                "type": "string",
+                "description": "rtsp Url"
+            },
+            {
+                "name": "rtspUserName",
+                "type": "string",
+                "description": "rtsp source user name.",
+                "default": "dummyUserName"
+            }
+        ],
+        "sources": [
+            {
+                "@type": "#Microsoft.VideoAnalyzer.RtspSource",
+                "name": "rtspSource",
+                "transport": "tcp",
+                "endpoint": {
+                    "@type": "#Microsoft.VideoAnalyzer.UnsecuredEndpoint",
+                    "url": "${rtspUrl}",
+                    "credentials": {
+                        "@type": "#Microsoft.VideoAnalyzer.UsernamePasswordCredentials",
+                        "username": "${rtspUserName}",
+                        "password": "${rtspPassword}"
+                    }
+                }
+            }
+        ],
+        "processors": [
+            {
+                "@type": "#Microsoft.VideoAnalyzer.HttpExtension",
+                "endpoint": {
+                    "@type": "#Microsoft.VideoAnalyzer.UnsecuredEndpoint",
+                    "url": "${inferencingUrl}",
+                    "credentials": {
+                        "@type": "#Microsoft.VideoAnalyzer.UsernamePasswordCredentials",
+                        "username": "${inferencingUserName}",
+                        "password": "${inferencingPassword}"
+                    }
+                },
+                "image": {
+                    "scale": {
+                        "mode": "pad",
+                        "width": "416",
+                        "height": "416"
+                    },
+                    "format": {
+                        "@type": "#Microsoft.VideoAnalyzer.ImageFormatBmp"
+                    }
+                },
+                "samplingOptions": {
+                    "maximumSamplesPerSecond": "10",
+                    "skipSamplesWithoutAnnotation": "false"
+                },
+                "name": "httpExtension",
+                "inputs": [
+                    {
+                        "nodeName": "rtspSource",
+                        "outputSelectors": [
+                            {
+                                "property": "mediaType",
+                                "operator": "is",
+                                "value": "video"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "@type": "#Microsoft.VideoAnalyzer.MotionDetectionProcessor",
+                "sensitivity": "medium",
+                "eventAggregationWindow": "PT1S",
+                "name": "motionDetectionProcessor",
+                "inputs": [
+                    {
+                        "nodeName": "rtspSource",
+                        "outputSelectors": [
+                            {
+                                "property": "mediaType",
+                                "operator": "is",
+                                "value": "video"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "@type": "#Microsoft.VideoAnalyzer.SignalGateProcessor",
+                "activationEvaluationWindow": "PT1S",
+                "activationSignalOffset": "PT0S",
+                "minimumActivationTime": "PT30S",
+                "maximumActivationTime": "PT30S",
+                "name": "signalGateProcessor",
+                "inputs": [
+                    {
+                        "nodeName": "rtspSource",
+                        "outputSelectors": []
+                    },
+                    {
+                        "nodeName": "httpExtension",
+                        "outputSelectors": []
+                    }
+                ]
+            },
+            {
+                "@type": "#Microsoft.VideoAnalyzer.SignalGateProcessor",
+                "activationEvaluationWindow": "PT0H0M1S",
+                "activationSignalOffset": "PT0H0M0S",
+                "minimumActivationTime": "PT0H0M30S",
+                "maximumActivationTime": "PT0H0M30S",
+                "name": "signalGateProcessor1",
+                "inputs": [
+                    {
+                        "nodeName": "motionDetectionProcessor",
+                        "outputSelectors": []
+                    },
+                    {
+                        "nodeName": "rtspSource",
+                        "outputSelectors": []
+                    }
+                ]
+            }
+        ],
+        "sinks": [
+            {
+                "@type": "#Microsoft.VideoAnalyzer.FileSink",
+                "baseDirectoryPath": "/var/media/output",
+                "fileNamePattern": "smartr-demo-${System.TopologyName}${System.PipelineName}${System.Runtime.DateTime}",
+                "maximumSizeMiB": "1024",
+                "name": "fileSink",
+                "inputs": [
+                    {
+                        "nodeName": "signalGateProcessor1",
+                        "outputSelectors": [
+                            {
+                                "property": "mediaType",
+                                "operator": "is",
+                                "value": "video"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "@type": "#Microsoft.VideoAnalyzer.IotHubMessageSink",
+                "hubOutputName": "${hubSinkOutputName}",
+                "name": "hubSink",
+                "inputs": [
+                    {
+                        "nodeName": "httpExtension",
+                        "outputSelectors": []
+                    }
+                ]
+            },
+            {
+                "@type": "#Microsoft.VideoAnalyzer.VideoSink",
+                "localMediaCachePath": "/var/lib/videoanalyzer/tmp/",
+                "localMediaCacheMaximumSizeMiB": "2048",
+                "videoName": "smartr-demo-video",
+                "videoCreationProperties": {
+                    "title": "SmartR Demo Video",
+                    "description": "Demo Video from SMARTR Object Detection",
+                    "segmentLength": "PT30S"
+                },
+                "name": "videoSink",
+                "inputs": [
+                    {
+                        "nodeName": "signalGateProcessor",
+                        "outputSelectors": [
+                            {
+                                "property": "mediaType",
+                                "operator": "is",
+                                "value": "video"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}
